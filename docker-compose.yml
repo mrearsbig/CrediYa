@@ -1,0 +1,105 @@
+version: "3.9"
+
+networks:
+  crediya-net:
+    driver: bridge
+
+volumes:
+  auth-db-data:
+  request-db-data:
+
+services:
+  authentication-db:
+    image: postgres:17-alpine
+    container_name: authentication-db
+    environment:
+      POSTGRES_DB: authentication_db
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_password
+    ports:
+      - "5433:5432" # Puerto externo distinto para evitar conflicto local
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    networks:
+      - crediya-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user -d authentication_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  authentication:
+    build:
+      context: ./authentication/applications/app-service/build/libs
+      dockerfile: ../../../deployment/Dockerfile
+    image: crediya/authentication:local
+    container_name: authentication
+    depends_on:
+      authentication-db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:postgresql://authentication-db:5432/authentication_db
+      SPRING_DATASOURCE_USERNAME: auth_user
+      SPRING_DATASOURCE_PASSWORD: auth_password
+    ports:
+      - "8080:8080"
+    networks:
+      - crediya-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  request-db:
+    image: postgres:17-alpine
+    container_name: request-db
+    environment:
+      POSTGRES_DB: request_db
+      POSTGRES_USER: request_user
+      POSTGRES_PASSWORD: request_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - request-db-data:/var/lib/postgresql/data
+    networks:
+      - crediya-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U request_user -d request_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  request:
+    build:
+      context: ./request/applications/app-service/build/libs
+      dockerfile: ../../../deployment/Dockerfile
+    image: crediya/request:local
+    container_name: request
+    depends_on:
+      authentication:
+        condition: service_healthy
+      request-db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8081
+      AUTHENTICATION_BASE_URL: http://authentication:8080
+      SPRING_DATASOURCE_URL: jdbc:postgresql://request-db:5432/request_db
+      SPRING_DATASOURCE_USERNAME: request_user
+      SPRING_DATASOURCE_PASSWORD: request_password
+    ports:
+      - "8081:8081"
+    networks:
+      - crediya-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
