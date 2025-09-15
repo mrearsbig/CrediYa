@@ -1,0 +1,6 @@
+[submodule "authentication"]
+	path = authentication
+	url = https://github.com/mrearsbig/authentication.git
+[submodule "request"]
+	path = request
+	url = https://github.com/mrearsbig/request.git
